@@ -822,46 +822,42 @@ pub fn verifier_for_der(der: &[u8]) -> Result<Box<dyn JwsVerifier>, JwtError> {
         josekit::jws::ES384,
         josekit::jws::ES512,
     ] {
-        let Ok(verifier) = alg.verifier_from_der(der) else {
-            continue;
-        };
-        return Ok(Box::new(verifier));
+        if let Ok(verifier) = alg.verifier_from_der(der) {
+            return Ok(Box::new(verifier));
+        }
     }
     for alg in [
         josekit::jws::RS256,
         josekit::jws::RS384,
         josekit::jws::RS512,
     ] {
-        let Ok(verifier) = alg.verifier_from_der(der) else {
-            continue;
-        };
-        return Ok(Box::new(verifier));
+        if let Ok(verifier) = alg.verifier_from_der(der) {
+            return Ok(Box::new(verifier));
+        }
     }
     for alg in [
         josekit::jws::PS256,
         josekit::jws::PS384,
         josekit::jws::PS512,
     ] {
-        let Ok(verifier) = alg.verifier_from_der(der) else {
-            continue;
-        };
-        return Ok(Box::new(verifier));
+        if let Ok(verifier) = alg.verifier_from_der(der) {
+            return Ok(Box::new(verifier));
+        }
     }
+    #[expect(clippy::single_element_loop, reason = "There might be more algorithms")]
     for alg in [josekit::jws::EdDSA] {
-        let Ok(verifier) = alg.verifier_from_der(der) else {
-            continue;
-        };
-        return Ok(Box::new(verifier));
+        if let Ok(verifier) = alg.verifier_from_der(der) {
+            return Ok(Box::new(verifier));
+        }
     }
     for alg in [
         josekit::jws::MlDSA44,
         josekit::jws::MlDSA65,
         josekit::jws::MlDSA87,
     ] {
-        let Ok(verifier) = alg.verifier_from_der(der) else {
-            continue;
-        };
-        return Ok(Box::new(verifier));
+        if let Ok(verifier) = alg.verifier_from_der(der) {
+            return Ok(Box::new(verifier));
+        }
     }
     Err(X509Error::InvalidAlgorithm("Invalid Algorithm".to_string()).into())
 }
