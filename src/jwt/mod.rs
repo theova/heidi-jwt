@@ -165,6 +165,8 @@ where
 
 pub trait Jwtable: Serialize + DeserializeOwned + Debug {}
 
+type KeyIdAndVerifier = (String, Box<dyn JwsVerifier>);
+
 #[derive(Clone)]
 pub struct Jwt<T> {
     payload: T,
@@ -336,9 +338,7 @@ impl<T: Serialize + DeserializeOwned> Jwt<DetachedPayload<T>> {
             self.generalized_payload = gp.clone();
         }
     }
-    pub fn verifier_from_embedded_jwk(
-        &self,
-    ) -> Result<Vec<(String, Box<dyn JwsVerifier>)>, JwtError> {
+    pub fn verifier_from_embedded_jwk(&self) -> Result<Vec<KeyIdAndVerifier>, JwtError> {
         let Some(jwks) = self
             .payload
             .generalized_payload
@@ -439,9 +439,7 @@ impl<T: Serialize + DeserializeOwned> Jwt<DetachedPayload<T>> {
 }
 
 impl<T: Serialize + DeserializeOwned> Jwt<T> {
-    pub fn verifier_from_embedded_jwk(
-        &self,
-    ) -> Result<Vec<(String, Box<dyn JwsVerifier>)>, JwtError> {
+    pub fn verifier_from_embedded_jwk(&self) -> Result<Vec<KeyIdAndVerifier>, JwtError> {
         let Some(jwks) = self
             .generalized_payload
             .get("jwks")
@@ -680,6 +678,10 @@ impl JwkSet {
                     return Some(Box::new(verifier));
                 }
             }
+            #[expect(
+                clippy::single_element_loop,
+                reason = "There might be more algorithms to come"
+            )]
             for alg in [josekit::jws::EdDSA] {
                 if let Ok(verifier) = alg.verifier_from_jwk(jwk) {
                     return Some(Box::new(verifier));
@@ -727,6 +729,10 @@ pub fn verifier_for_jwk(jwk: Jwk) -> Option<Box<dyn JwsVerifier>> {
             return Some(Box::new(verifier));
         }
     }
+    #[expect(
+        clippy::single_element_loop,
+        reason = "There might be more algorithms to come"
+    )]
     for alg in [josekit::jws::EdDSA] {
         if let Ok(verifier) = alg.verifier_from_jwk(&jwk) {
             return Some(Box::new(verifier));
@@ -771,6 +777,10 @@ pub fn signer_for_jwk(jwk: Jwk) -> Option<Box<dyn JwsSigner>> {
             return Some(Box::new(signer));
         }
     }
+    #[expect(
+        clippy::single_element_loop,
+        reason = "There might be more algorithms to come"
+    )]
     for alg in [josekit::jws::EdDSA] {
         if let Ok(signer) = alg.signer_from_jwk(&jwk) {
             return Some(Box::new(signer));
@@ -856,36 +866,34 @@ pub fn verifier_for_header_with_root_store(
     check_chain: bool,
 ) -> Option<Box<dyn JwsVerifier>> {
     let alg_name = header.algorithm().unwrap_or("ES256");
-    if check_chain {
-        if let Some(mut x5c) = header.x509_certificate_chain() {
-            // Check if the x509 certificate chain is valid
-            // if there are no certificates in the chain, we can't verify
-            if x5c.is_empty() {
+    if check_chain && let Some(mut x5c) = header.x509_certificate_chain() {
+        // Check if the x509 certificate chain is valid
+        // if there are no certificates in the chain, we can't verify
+        if x5c.is_empty() {
+            return None;
+        }
+        let x5c = if let Some(root_store) = root_store {
+            match complete_simple_chain::<JosekitCryptoProvider>(&mut x5c, &root_store) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!("Cannot complete chain: {e:?}");
+                    return None;
+                }
+            }
+            x5c
+        } else {
+            x5c
+        };
+        // if we have only one certificate, check for self signed user certificate
+        // NOTE: this means CA should be false!
+        if x5c.len() == 1 {
+            if !is_self_signed_user_cert::<_, JosekitCryptoProvider>(&x5c[0]) {
                 return None;
             }
-            let x5c = if let Some(root_store) = root_store {
-                match complete_simple_chain::<JosekitCryptoProvider>(&mut x5c, &root_store) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::error!("Cannot complete chain: {e:?}");
-                        return None;
-                    }
-                }
-                x5c
-            } else {
-                x5c
-            };
-            // if we have only one certificate, check for self signed user certificate
-            // NOTE: this means CA should be false!
-            if x5c.len() == 1 {
-                if !is_self_signed_user_cert::<_, JosekitCryptoProvider>(&x5c[0]) {
-                    return None;
-                }
-            } else {
-                // verify the certificate chain
-                if !verify_chain::<JosekitCryptoProvider>(x5c.clone()) {
-                    return None;
-                }
+        } else {
+            // verify the certificate chain
+            if !verify_chain::<JosekitCryptoProvider>(x5c.clone()) {
+                return None;
             }
         }
     }

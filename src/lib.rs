@@ -112,8 +112,7 @@ mod tests {
             .with(EnvFilter::from_default_env())
             .init();
         let verifier = verifier_for_header(&jwt.header().unwrap()).unwrap();
-        let _ = jwt
-            .verify_signature_with_verifier(verifier.as_ref())
+        jwt.verify_signature_with_verifier(verifier.as_ref())
             .unwrap();
     }
 }
